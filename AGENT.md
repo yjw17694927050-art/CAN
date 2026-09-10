@@ -163,7 +163,7 @@ pytest tests/ -q
 
 ### 代码风格 / Code Style
 
-- **`core/` 目录禁止引入 GUI 依赖**。核心模块必须能在无头（headless）环境下测试。
+- **`core/` 目录禁止引入 GUI 依赖**。核心模块必须能在headless环境下测试。
 - **跨线程通信必须使用信号（Signals）**。工作线程内禁止直接调用 GUI 方法。
 - **所有公开 API 需要类型注解（Type hints）**。
 - **所有公开函数/类需要文档字符串（Docstrings）**。

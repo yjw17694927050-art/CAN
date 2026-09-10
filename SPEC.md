@@ -322,6 +322,7 @@ def on_frame(api, frame):
 ```
 tests/
 ├── conftest.py              # 夹具 Fixtures（mock bus、示例帧）
+├── test_gui_tabs.py         # pytest-qt 界面测试（15 个标签页构建 + 关键交互）
 ├── test_audit_fixes.py      # 已修复 bug 的回归测试
 ├── test_safety.py           # 安全门测试
 ├── test_log_importers.py    # 日志格式测试
@@ -329,6 +330,8 @@ tests/
 ├── test_uds_safety.py       # UDS 安全测试
 └── ...                      # 20+ 个测试文件
 ```
+
+> **界面测试说明 / UI Test Note**：UI 用例采用 **pytest-qt**，按标签页逐个构建并驱动实际控件交互（参数化覆盖全部 15 个标签页），避免整窗 MainWindow 在 Windows 拆解时的原生崩溃。被测代码与 App 一致地通过顶层 `core.*` 导入，避免与 `canlab.core.*` 形成双模块单例、界面读到空数据。
 
 ### 9.2 测试覆盖 / Test Coverage
 
@@ -338,17 +341,18 @@ tests/
 | 安全 Safety | 2 | 良好 Good |
 | 日志格式 Log formats | 1 | 良好 Good |
 | REST API | 1 | 基础 Basic |
-| UI（界面） | 0 | **缺失 None** |
+| UI（界面，pytest-qt） | 1 | 良好 Good（18 个用例） |
 
 ### 9.3 运行测试 / Running Tests
 
 ```bash
-pytest tests/ -q                    # 全部测试 All tests
+pytest tests/ -q                    # 全部测试 All tests（Windows 下用 .venv\Scripts\python.exe）
 pytest tests/test_safety.py -v      # 指定文件 Specific file
 pytest -k "test_arm" -v             # 模式匹配 Pattern match
+pytest tests/test_gui_tabs.py -v    # 界面测试 UI tests（需 pytest-qt、Qt 显示环境）
 ```
 
-**预期结果 Expected**：151 passed, 1 skipped（MDF 需要 `asammdf`）
+**预期结果 Expected**：169 passed, 1 skipped（跳过项为 UDS 硬件依赖测试）。提交代码前应保持全量全绿（见个人开发规范第 1 节）。
 
 ---
 
