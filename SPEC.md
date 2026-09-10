@@ -1,471 +1,475 @@
-# CanLab — Technical Specification
+# CanLab — 技术规格说明书 / Technical Specification
 
-> **Version**: 1.0 (Alpha)  
-> **Date**: 2026-09-10  
-> **Status**: Active development
-
----
-
-## 1. Overview
-
-CanLab is a desktop application for reverse-engineering CAN bus data. It provides tools for capturing, analyzing, decoding, and (on isolated bench setups) injecting CAN frames. The application is built with Python 3.11+ and PyQt6.
-
-### 1.1 Goals
-
-- Provide a unified workstation for CAN bus reverse engineering
-- Support multiple CAN interfaces via python-can
-- Automate signal discovery and DBC generation
-- Integrate AI-assisted signal interpretation
-- Maintain strict safety boundaries between analysis and transmission
-
-### 1.2 Non-Goals
-
-- Real-time ECU flashing or calibration
-- Vehicle-specific tuning (use dedicated tools)
-- Production-grade automotive diagnostics (use OEM tools)
+> **版本 Version**：1.0（Alpha）
+> **日期 Date**：2026-09-10
+> **状态 Status**：活跃开发中 / Active development
+>
+> **语言 Language**：中英对照。中文为主，技术术语保留英文，方便中文开发者理解。
 
 ---
 
-## 2. System Architecture
+## 1. 总览 / Overview
 
-### 2.1 High-Level Architecture
+CanLab 是一个用于 CAN 总线数据逆向工程的桌面应用程序。它提供了采集（capture）、分析（analysis）、解码（decode）、以及在隔离台架（isolated bench setup）上注入（inject）CAN 帧的工具。应用程序基于 Python 3.11+ 与 PyQt6 构建。
+
+### 1.1 目标 / Goals
+
+- 提供统一的 CAN 总线逆向工程工作站
+- 通过 python-can 支持多种 CAN 接口
+- 自动化信号发现与 DBC 生成
+- 集成 AI 辅助信号解读
+- 在分析（analysis）与发送（transmission）之间保持严格的安全边界
+
+### 1.2 非目标 / Non-Goals
+
+- 实时 ECU 刷写或标定（real-time ECU flashing/calibration）
+- 车型特定调参（vehicle-specific tuning —— 请使用专用工具）
+- 生产级汽车诊断（production-grade diagnostics —— 请使用 OEM 工具）
+
+---
+
+## 2. 系统架构 / System Architecture
+
+### 2.1 高层架构 / High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────┐
-│           PyQt6 GUI Layer               │
+│           PyQt6 GUI 层 GUI Layer        │
 │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────────┐  │
-│  │Tabs │ │Panel│ │Panel│ │Settings │  │
-│  │(15) │ │ ID  │ │Insp.│ │ Dialog  │  │
+│  │标签页│ │面板 │ │面板 │ │设置对话框│  │
+│  │ Tabs│ │ ID  │ │Insp.│ │ Settings│  │
+│  │(15) │ │     │ │     │ │ Dialog  │  │
 │  └──┬──┘ └──┬──┘ └──┬──┘ └────┬────┘  │
 │     └────────┴────────┴────────┘       │
-│              MainWindow                 │
-│              (QMainWindow)              │
+│              MainWindow 主窗口         │
+│            （QMainWindow）             │
 └─────────────────┬───────────────────────┘
-                  │ signals/slots
+                  │ 信号/槽 signals/slots
 ┌─────────────────▼───────────────────────┐
-│           AppState (Singleton)          │
+│      AppState（单例 Singleton）        │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│  │ Frames  │ │ Signals │ │   DBC   │  │
-│  │DataFrame│ │  list   │ │ manager │  │
+│  │帧Frames │ │信号上    │ │DBC管理  │  │
+│  │DataFrame│ │列表 list │ │manager  │  │
 │  └─────────┘ └─────────┘ └─────────┘  │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│            Core Engine Layer            │
+│        核心引擎层 Core Engine Layer    │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│  │Analysis │ │Protocol │ │ Safety  │  │
-│  │(40+ mod)│ │(UDS/J1939│ │  Gate   │  │
-│  │         │ │/OBD-II) │ │         │  │
+│  │分析      │ │协议      │ │安全门   │  │
+│  │Analysis │ │Protocol │ │Safety   │  │
+│  │(40+模块) │ │(UDS/    │ │ Gate    │  │
+│  │         │ │ J1939)  │ │         │  │
 │  └─────────┘ └─────────┘ └─────────┘  │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│         Hardware Abstraction            │
-│         python-can (BusABC)             │
+│     硬件抽象层 Hardware Abstraction    │
+│      python-can（BusABC）              │
 │    ┌────────┐ ┌────────┐ ┌────────┐   │
-│    │ Socket │ │  PCAN  │ │ Vector │   │
-│    │  CAN   │ │        │ │        │   │
+│    │Socket  │ │ PCAN   │ │ Vector │   │
+│    │ CAN    │ │        │ │        │   │
 │    └────────┘ └────────┘ └────────┘   │
 └─────────────────────────────────────────┘
 ```
 
-### 2.2 Threading Model
+### 2.2 线程模型 / Threading Model
 
-| Thread | Purpose | Lifetime |
-|--------|---------|----------|
-| Main (GUI) | Event loop, rendering, user input | Application lifetime |
-| LiveCANWorker | Real-time CAN frame capture | While "Live" mode active |
-| MultiBusWorker | Multi-interface capture | While multi-bus active |
-| ReplayWorker | Log file replay | While replaying |
-| InjectionWorker | Frame injection | While injecting |
-| FuzzerWorker | Fuzzing campaigns | While fuzzing |
-| GatewayWorker | MitM forwarding | While gateway active |
-| SafetyScanWorker | Safety-critical sweeps | While scanning |
-| UDSScanWorker | Diagnostic scans | While scanning |
-| SecurityAccessWorker | Seed/key cracking | While cracking |
-| REST API Thread | Local HTTP server | While API enabled |
-| ComputeWorker | Background analysis | On demand |
+| 线程 Thread | 用途 Purpose | 生命周期 Lifetime |
+|-------------|--------------|-------------------|
+| 主线程 / Main (GUI) | 事件循环、渲染、用户输入 | 应用生命周期 |
+| LiveCANWorker | 实时 CAN 帧采集 | 输入法（live）模式激活期间 |
+| MultiBusWorker | 多接口采集 | 多总线激活期间 |
+| ReplayWorker | 日志文件回放 | 回放期间 |
+| InjectionWorker | 帧注入 | 注入期间 |
+| FuzzerWorker | 模糊测试 | 模糊期间 |
+| GatewayWorker | MitM 转发 | 网关激活期间 |
+| SafetyScanWorker | 安全关键扫描 | 扫描期间 |
+| UDSScanWorker | 诊断扫描 | 扫描期间 |
+| SecurityAccessWorker | seed/key 破解 | 破解期间 |
+| REST API 线程 | 本地 HTTP 服务器 | API 启用期间 |
+| ComputeWorker | 后台分析 | 按需 |
 
-**Rule**: All workers must implement `stop()` and respect `self._running`. MainWindow's `closeEvent` calls `_stop_tab_workers()` to join all threads before exit.
+**规则 Rule**：所有工作线程必须实现 `stop()` 并遵守 `self._running`。主窗口的 `closeEvent` 调用 `_stop_tab_workers()` 在退出前 join 所有线程。
 
 ---
 
-## 3. Data Model
+## 3. 数据模型 / Data Model
 
-### 3.1 Frame Storage (`core/state.py`)
+### 3.1 帧存储 / Frame Storage（`core/state.py`）
 
 ```python
 class AppState(QObject):
-    # Signals
+    # 信号 Signals
     frames_updated = pyqtSignal()
     id_selected = pyqtSignal(str)
     dbc_updated = pyqtSignal()
-    # ... 20+ signals
+    # ... 20+ 个信号
 
-    # Storage
-    _frames_base: pd.DataFrame      # Historical frames (from files)
-    _frame_chunks: list[pd.DataFrame] # Live chunks (appended)
-    _frames_cache: pd.DataFrame     # Lazy concatenation cache
-    max_frames: int = 500_000       # Memory cap
+    # 存储 Storage
+    _frames_base: pd.DataFrame       # 历史帧（来自文件）
+    _frame_chunks: list[pd.DataFrame]  # 实时 chunk（追加）
+    _frames_cache: pd.DataFrame      # 惰性拼接缓存（lazy concatenation cache）
+    max_frames: int = 500_000        # 内存上限
 ```
 
-**Frame DataFrame schema**:
+**帧 DataFrame 结构 / Frame DataFrame schema**：
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `Timestamp` | float | Seconds since epoch |
-| `ID` | str | Hex CAN ID (e.g., "0x123") |
-| `DLC` | int | Data length code (0-8) |
-| `B0`-`B7` | int | Data bytes |
-| `Extended` | bool | 29-bit ID flag |
-| `Bus` | str | Interface name (multi-bus) |
-| `Direction` | str | "RX" or "TX" |
+| 列 Column | 类型 Type | 说明 Description |
+|-----------|-----------|------------------|
+| `Timestamp` | float | 自 epoch 起的秒数 |
+| `ID` | str | 十六进制 CAN ID（如 "0x123"） |
+| `DLC` | int | 数据长度码（0-8） |
+| `B0`-`B7` | int | 数据字节 |
+| `Extended` | bool | 29 位 ID 标志 |
+| `Bus` | str | 接口名（多总线） |
+| `Direction` | str | "RX"（接收）或 "TX"（发送） |
 
-### 3.2 Signal Definition
+### 3.2 信号定义 / Signal Definition
 
 ```python
 signal_def = {
-    "message_id": "0x123",
-    "message_name": "WHL_SPD",
-    "signal_name": "WHL_SPD_FL",
-    "start_bit": 0,
-    "length": 16,
-    "byte_order": "little",  # or "big"
-    "value_type": "unsigned",  # or "signed"
-    "scale": 0.03125,
-    "offset": 0.0,
-    "minimum": 0.0,
-    "maximum": 255.996875,
-    "unit": "km/h",
+    "message_id":   "0x123",       # 消息 ID
+    "message_name": "WHL_SPD",     # 消息名（如"轮速"）
+    "signal_name":  "WHL_SPD_FL",  # 信号名
+    "start_bit":    0,             # 起始位
+    "length":       16,            # 位长
+    "byte_order":   "little",      # 字序："big" 或 "little"
+    "value_type":   "unsigned",    # 类型："signed" 或 "unsigned"
+    "scale":        0.03125,       # 缩放系数
+    "offset":       0.0,           # 偏移量
+    "minimum":      0.0,           # 最小物理值
+    "maximum":      255.996875,    # 最大物理值
+    "unit":         "km/h",        # 单位
 }
 ```
 
-### 3.3 DBC Management
+### 3.3 DBC 管理 / DBC Management
 
-- Uses `cantools` for DBC parsing, encoding, decoding
-- Supports DBC, ARXML, CAN matrix import
-- Exports: DBC, openpilot DBC, CANdb++, ARXML, Wireshark Lua
+- 使用 `cantools` 进行 DBC 解析、编码、解码
+- 支持导入：DBC、ARXML、CAN matrix
+- 支持导出：DBC、openpilot DBC、CANdb++、ARXML、Wireshark Lua
 
 ---
 
-## 4. Safety Architecture
+## 4. 安全架构 / Safety Architecture
 
-### 4.1 ARM TX Gate (`core/safety.py`)
+### 4.1 ARM TX 安全门 / ARM TX Gate（`core/safety.py`）
 
 ```python
-_armed = False  # Global state, disarmed by default
+_armed = False  # 全局状态，默认不布防 / disarmed by default
 
 def require_armed() -> None:
-    """Raise BusNotArmedError unless TX is explicitly armed."""
+    """除非 TX 已显式布防，否则抛出 BusNotArmedError。"""
     if not is_armed():
         raise BusNotArmedError("Bus transmit is disarmed...")
 ```
 
-**Protected paths** (must call `require_armed()` before every `bus.send()`):
+**受保护路径 Protected paths**（每个 `bus.send()` 之前必须调用 `require_armed()`）：
 
-| Module | Method | Purpose |
-|--------|--------|---------|
-| `injection.py` | `InjectionWorker.run()` | Signal injection |
-| `fuzzer.py` | `FuzzerWorker.run()` | Fuzzing campaigns |
-| `replay.py` | `ReplayWorker.run()` | Log replay |
-| `gateway.py` | `GatewayWorker.run()` | MitM forwarding |
-| `safety_scanner.py` | `SafetyScanWorker.run()` | Safety sweeps |
-| `uds.py` | `UDSScanner._send_to()` | UDS requests |
-| `uds.py` | `UDSScanner._send_and_recv()` | UDS requests |
-| `rest_api.py` | `/inject` endpoint | REST injection |
+| 模块 Module | 方法 Method | 用途 Purpose |
+|-------------|-------------|--------------|
+| `injection.py` | `InjectionWorker.run()` | 信号注入 |
+| `fuzzer.py` | `FuzzerWorker.run()` | 模糊测试 |
+| `replay.py` | `ReplayWorker.run()` | 日志回放 |
+| `gateway.py` | `GatewayWorker.run()` | MitM 转发 |
+| `safety_scanner.py` | `SafetyScanWorker.run()` | 安全扫描 |
+| `uds.py` | `UDSScanner._send_to()` | UDS 请求 |
+| `uds.py` | `UDSScanner._send_and_recv()` | UDS 请求 |
+| `rest_api.py` | `/inject` 接口 | REST 注入 |
 
-### 4.2 Safety Features
+### 4.2 安全特性 / Safety Features
 
-- **First-launch disclaimer**: Cannot proceed without acknowledging risks
-- **ARM TX toggle**: Toolbar button, disarmed by default, requires explicit click
-- **Read-only UDS scan**: Destructive services require separate checkbox + confirmation
-- **Path whitelist**: Cache clear only allowed inside `~/.canlab`
-- **Expression sandbox**: Custom seed→key expressions validated by AST whitelist
+- **首次启动免责声明**：不确认风险无法继续
+- **ARM TX 开关**：工具栏按钮，默认关闭，需用户显式点击开启
+- **只读 UDS 扫描**：破坏性服务需单独勾选 + 确认
+- **路径白名单**：清缓存仅允许在 `~/.canlab` 目录内
+- **表达式沙箱**：自定义 seed→key 表达式通过 AST 白名单校验
 
 ---
 
-## 5. Protocol Support
+## 5. 协议支持 / Protocol Support
 
 ### 5.1 CAN / CAN FD
 
-- Classical CAN: 11-bit and 29-bit IDs, up to 8 bytes
-- CAN FD: up to 64 bytes, BRS (Bit Rate Switch) support
-- Log formats: CSV, candump, PCAN, Vector ASC, MDF (optional)
+- 经典 CAN：11 位与 29 位 ID，最多 8 字节
+- CAN FD：最多 64 字节，支持 BRS（比特率切换）
+- 日志格式：CSV、candump、PCAN、Vector ASC、MDF（可选）
 
-### 5.2 UDS (ISO 14229)
+### 5.2 UDS（ISO 14229）
 
-| Service | ID | Support |
-|---------|-----|---------|
-| DiagnosticSessionControl | 0x10 | ✅ |
-| ECUReset | 0x11 | ✅ |
-| SecurityAccess | 0x27 | ✅ |
-| ReadDataByIdentifier | 0x22 | ✅ |
-| WriteDataByIdentifier | 0x2E | ✅ |
-| RoutineControl | 0x31 | ✅ |
-| RequestDownload | 0x34 | ✅ |
-| TransferData | 0x36 | ✅ |
-| RequestTransferExit | 0x37 | ✅ |
+| 服务 Service | ID | 支持 |
+|--------------|-----|------|
+| DiagnosticSessionControl（诊断会话控制） | 0x10 | ✅ |
+| ECUReset（ECU 复位） | 0x11 | ✅ |
+| SecurityAccess（安全访问） | 0x27 | ✅ |
+| ReadDataByIdentifier（按 ID 读数据） | 0x22 | ✅ |
+| WriteDataByIdentifier（按 ID 写数据） | 0x2E | ✅ |
+| RoutineControl（例程控制） | 0x31 | ✅ |
+| RequestDownload（请求下载） | 0x34 | ✅ |
+| TransferData（传输数据） | 0x36 | ✅ |
+| RequestTransferExit（结束传输） | 0x37 | ✅ |
 
 ### 5.3 J1939
 
-- PGN/SPN decoding
-- DM1 (Active Diagnostic Trouble Codes)
-- DM2 (Previously Active DTCs)
+- PGN/SPN 解码
+- DM1（当前激活 DTC 诊断故障码）
+- DM2（历史 DTC）
 
-### 5.4 OBD-II (ISO 15031)
+### 5.4 OBD-II（ISO 15031）
 
-- Mode 01: Current data (PID polling)
-- Mode 03: Stored DTCs
-- Mode 04: Clear DTCs
-- Mode 09: Vehicle information
+- Mode 01：实时数据（PID 轮询）
+- Mode 03：已存储 DTC
+- Mode 04：清除 DTC
+- Mode 09：车辆信息
 
-### 5.5 ISO-TP (ISO 15765-2)
+### 5.5 ISO-TP（ISO 15765-2）
 
-- Single frame (SF)
-- First frame (FF)
-- Consecutive frame (CF)
-- Flow control (FC)
+- 单帧 / Single frame（SF）
+- 首帧 / First frame（FF）
+- 连续帧 / Consecutive frame（CF）
+- 流控 / Flow control（FC）
 
-### 5.6 XCP (Universal Measurement and Calibration Protocol)
+### 5.6 XCP（通用测量与标定协议）
 
-- Basic XCP commands
-- DAQ list configuration
+- 基础 XCP 命令
+- DAQ 列表配置
 
-### 5.7 DoIP (ISO 13400)
+### 5.7 DoIP（ISO 13400）
 
-- Diagnostics over IP
-- Vehicle discovery
-- Routing activation
-
----
-
-## 6. AI Integration
-
-### 6.1 Providers
-
-| Provider | Model | API Key | Local |
-|----------|-------|---------|-------|
-| Anthropic | Claude 3.5 Sonnet | Required | No |
-| Groq | Llama 3.1 70B | Required | No |
-| Ollama | Any local model | Not required | Yes |
-
-### 6.2 AI Engine Tab
-
-- Send CAN ID + captured frames to AI for interpretation
-- Offline ML findings injected into prompt (entropy, periodicity, correlation)
-- Persistent conversation memory across sessions
-- Markdown rendering of responses
-
-### 6.3 MCP Server
-
-- Model Context Protocol server for external AI tools
-- Exposes CanLab state and analysis results
-- Runs on localhost, requires explicit enable
+- 基于 IP 的诊断
+- 车辆发现 / Vehicle discovery
+- 路由激活 / Routing activation
 
 ---
 
-## 7. Plugin System
+## 6. AI 集成 / AI Integration
 
-### 7.1 Plugin API
+### 6.1 提供商 / Providers
+
+| 提供商 Provider | 模型 Model | API Key | 本地 Local |
+|-----------------|-----------|---------|-----------|
+| Anthropic | Claude 3.5 Sonnet | 必需 Required | 否 No |
+| Groq | Llama 3.1 70B | 必需 Required | 否 No |
+| Ollama | 任意本地模型 | 不需要 Not required | 是 Yes |
+
+### 6.2 AI 引擎标签页 / AI Engine Tab
+
+- 发送 CAN ID + 采集帧给 AI 进行解读
+- 将离线 ML 分析结果（熵、周期、相关性）注入提示词 / prompt
+- 跨会话持久化对话记忆（persistent conversation memory）
+- 支持 Markdown 渲染响应
+
+### 6.3 MCP 服务器 / MCP Server
+
+- 供外部 AI 工具调用的 Model Context Protocol 服务器
+- 暴露 CanLab 状态与分析结果
+- 在 localhost 运行，需显式启用
+
+---
+
+## 7. 插件系统 / Plugin System
+
+### 7.1 插件 API / Plugin API
 
 ```python
 # examples/plugins/hello_plugin.py
 def register(api):
-    """Called when plugin is loaded."""
-    api.add_menu_action("Hello", on_hello)
-    api.add_frame_handler(on_frame)  # Optional: per-frame callback
+    """插件加载时被调用 Called when plugin is loaded."""
+    api.add_menu_action("Hello", on_hello)   # 添加菜单项
+    api.add_frame_handler(on_frame)          # 可选：每帧回调
 
 def on_hello(api):
     api.show_message("Hello from plugin!")
 
 def on_frame(api, frame):
-    pass  # Process each frame
+    pass  # 处理每一帧 Process each frame
 ```
 
-### 7.2 Plugin Discovery
+### 7.2 插件发现 / Plugin Discovery
 
-- Scans `plugins/` directory at startup
-- Loads `.py` files with `register()` function
-- Sandboxed: plugins run in main thread, can access AppState
+- 启动时扫描 `plugins/` 目录
+- 加载定义了 `register()` 函数的 `.py` 文件
+- 插件在主线程运行，可访问 AppState
 
 ---
 
 ## 8. REST API
 
-### 8.1 Endpoints
+### 8.1 端点 / Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/status` | Server status, frame count, armed state |
-| GET | `/frames` | Recent frames (paginated) |
-| GET | `/frames/{id}` | Frames for specific CAN ID |
-| POST | `/inject` | Inject frame (requires ARM TX + token) |
-| GET | `/signals` | Current signal values |
-| GET | `/dbc` | Current DBC as JSON |
+| 方法 Method | 路径 Path | 说明 Description |
+|-------------|-----------|------------------|
+| GET | `/status` | 服务器状态、帧计数、布防状态 |
+| GET | `/frames` | 最近帧（分页） |
+| GET | `/frames/{id}` | 指定 CAN ID 的帧 |
+| POST | `/inject` | 注入帧（需 ARM TX + token） |
+| GET | `/signals` | 当前信号值 |
+| GET | `/dbc` | 当前 DBC（JSON） |
 
-### 8.2 Authentication
+### 8.2 认证 / Authentication
 
-- Bearer token in `Authorization` header
-- Token generated on first API enable
-- Stored in system keyring
+- `Authorization` 头中的 Bearer token
+- 首次启用 API 时生成
+- 存储在系统钥匙串（system keyring）
 
 ---
 
-## 9. Testing
+## 9. 测试 / Testing
 
-### 9.1 Test Structure
+### 9.1 测试结构 / Test Structure
 
 ```
 tests/
-├── conftest.py              # Fixtures (mock bus, sample frames)
-├── test_audit_fixes.py      # Regression tests for fixed bugs
-├── test_safety.py           # Safety gate tests
-├── test_log_importers.py    # Log format tests
-├── test_rest_api.py         # API endpoint tests
-├── test_uds_safety.py       # UDS safety tests
-└── ...                      # 20+ test files
+├── conftest.py              # 夹具 Fixtures（mock bus、示例帧）
+├── test_audit_fixes.py      # 已修复 bug 的回归测试
+├── test_safety.py           # 安全门测试
+├── test_log_importers.py    # 日志格式测试
+├── test_rest_api.py         # API 端点测试
+├── test_uds_safety.py       # UDS 安全测试
+└── ...                      # 20+ 个测试文件
 ```
 
-### 9.2 Test Coverage
+### 9.2 测试覆盖 / Test Coverage
 
-| Category | Files | Coverage |
-|----------|-------|----------|
-| Core logic | 15 | Good |
-| Safety | 2 | Good |
-| Log formats | 1 | Good |
-| REST API | 1 | Basic |
-| UI | 0 | **None** |
+| 类别 Category | 文件数 Files | 覆盖 Coverage |
+|---------------|-------------|---------------|
+| 核心逻辑 Core logic | 15 | 良好 Good |
+| 安全 Safety | 2 | 良好 Good |
+| 日志格式 Log formats | 1 | 良好 Good |
+| REST API | 1 | 基础 Basic |
+| UI（界面） | 0 | **缺失 None** |
 
-### 9.3 Running Tests
+### 9.3 运行测试 / Running Tests
 
 ```bash
-pytest tests/ -q                    # All tests
-pytest tests/test_safety.py -v      # Specific file
-pytest -k "test_arm" -v             # Pattern match
+pytest tests/ -q                    # 全部测试 All tests
+pytest tests/test_safety.py -v      # 指定文件 Specific file
+pytest -k "test_arm" -v             # 模式匹配 Pattern match
 ```
 
-**Expected**: 151 passed, 1 skipped (MDF requires `asammdf`)
+**预期结果 Expected**：151 passed, 1 skipped（MDF 需要 `asammdf`）
 
 ---
 
-## 10. Build & Distribution
+## 10. 构建与分发 / Build & Distribution
 
 ### 10.1 PyInstaller
 
 ```bash
-# Build standalone executable
+# 构建独立可执行文件 Build standalone executable
 pyinstaller canlab.spec
 
-# Output in dist/CanLab/
+# 输出到 dist/CanLab/
 ```
 
-### 10.2 PyInstaller Spec (`canlab.spec`)
+### 10.2 PyInstaller 规格 / PyInstaller Spec（`canlab.spec`）
 
-- Single-file or one-dir mode
-- Bundles Qt plugins, cantools, pandas
-- Icon: `canlab/canlab.png`
-- Version info embedded
-
----
-
-## 11. Performance Targets
-
-| Metric | Target | Current |
-|--------|--------|---------|
-| Frame capture rate | 10,000 fps | ~5,000 fps |
-| Memory (1M frames) | < 500 MB | ~400 MB |
-| Startup time | < 3 s | ~2 s |
-| Plot refresh (10 signals) | 60 fps | ~30 fps |
-| Log file load (1M frames) | < 10 s | ~5 s |
+- 单文件或单目录模式
+- 打包 Qt 插件、cantools、pandas
+- 图标：`canlab/canlab.png`
+- 内嵌版本信息 / Version info embedded
 
 ---
 
-## 12. Security Considerations
+## 11. 性能目标 / Performance Targets
 
-### 12.1 Threat Model
-
-| Threat | Mitigation |
-|--------|------------|
-| Accidental injection on live bus | ARM TX gate, disarmed by default |
-| Malicious log file exploitation | Input validation, no code execution |
-| API token theft | System keyring storage |
-| Expression injection | AST whitelist, no `__builtins__` |
-| Path traversal in cache clear | Whitelist to `~/.canlab` |
-
-### 12.2 Data Privacy
-
-- No telemetry or analytics
-- API keys stored in system keyring (not plaintext)
-- Conversation history stored locally (`~/.canlab/`)
-- No cloud sync without explicit user action
+| 指标 Metric | 目标 Target | 当前 Current |
+|-------------|-------------|--------------|
+| 帧采集速率 Frame capture rate | 10,000 fps | ~5,000 fps |
+| 内存（100 万帧）Memory (1M frames) | < 500 MB | ~400 MB |
+| 启动时间 Startup time | < 3 s | ~2 s |
+| 绘图刷新（10 信号）Plot refresh | 60 fps | ~30 fps |
+| 日志加载（100 万帧）Log file load | < 10 s | ~5 s |
 
 ---
 
-## 13. Future Roadmap
+## 12. 安全考量 / Security Considerations
 
-### Short-term (next release)
+### 12.1 威胁模型 / Threat Model
 
-- [ ] UI test coverage with pytest-qt
-- [ ] Fix remaining MI normalization bug
-- [ ] Fix checksum detection direction
-- [ ] Gateway queue timeout handling
-- [ ] Plot tab performance optimization
+| 威胁 Threat | 缓解措施 Mitigation |
+|-------------|---------------------|
+| 在真实总线上意外注入 | ARM TX 安全门，默认关闭 |
+| 恶意日志文件攻击 | 输入校验，无代码执行 |
+| API token 窃取 | 系统钥匙串存储 |
+| 表达式注入 | AST 白名单，无 `__builtins__` |
+| 清缓存路径穿越 | 白名单限制到 `~/.canlab` |
 
-### Medium-term
+### 12.2 数据隐私 / Data Privacy
 
-- [ ] CAN FD full support (all tabs)
-- [ ] Ethernet/DoIP capture
-- [ ] Cloud DBC sharing (opt-in)
-- [ ] Collaborative analysis sessions
-
-### Long-term
-
-- [ ] Web-based version (Pyodide/WebAssembly)
-- [ ] Mobile companion app
-- [ ] Hardware-in-the-loop integration
+- 无遥测与分析上报
+- API key 存储在系统钥匙串（非明文）
+- 对话历史本地存储（`~/.canlab/`）
+- 未经用户显式操作不进行云同步
 
 ---
 
-## 14. Appendix
+## 13. 未来路线图 / Future Roadmap
 
-### 14.1 File Format Support Matrix
+### 短期（下一版本）/ Short-term
 
-| Format | Import | Export | Notes |
-|--------|--------|--------|-------|
-| DBC | ✅ | ✅ | Primary format |
-| ARXML | ✅ | ✅ | Experimental export |
-| CAN matrix | ✅ | ❌ | CSV-like format |
-| CANdb++ | ❌ | ✅ | Export only |
-| openpilot DBC | ❌ | ✅ | Export only |
-| Wireshark Lua | ❌ | ✅ | Export only |
-| CSV | ✅ | ✅ | Generic frame log |
+- [ ] 使用 pytest-qt 增加 UI 测试覆盖
+- [ ] 修复剩余 MI 归一化 bug
+- [ ] 修复校验和检测方向
+- [ ] 网关队列超时处理
+- [ ] 绘图标签页性能优化
+
+### 中期 / Medium-term
+
+- [ ] 全标签页 CAN FD 支持
+- [ ] 以太网/DoIP 采集
+- [ ] 云端 DBC 共享（可选加入）
+- [ ] 协作分析会话
+
+### 长期 / Long-term
+
+- [ ] 基于 Web 的版本（Pyodide/WebAssembly）
+- [ ] 移动端配套应用
+- [ ] 硬件在环（HIL）集成
+
+---
+
+## 附录 / Appendix
+
+### 文件格式支持矩阵 / File Format Support Matrix
+
+| 格式 Format | 导入 Import | 导出 Export | 备注 Notes |
+|-------------|------------|------------|-----------|
+| DBC | ✅ | ✅ | 主要格式 Primary format |
+| ARXML | ✅ | ✅ | 导出为实验性 |
+| CAN matrix | ✅ | ❌ | 类似 CSV 的格式 |
+| CANdb++ | ❌ | ✅ | 仅导出 |
+| openpilot DBC | ❌ | ✅ | 仅导出 |
+| Wireshark Lua | ❌ | ✅ | 仅导出 |
+| CSV | ✅ | ✅ | 通用帧日志 |
 | candump | ✅ | ✅ | Linux can-utils |
 | PCAN | ✅ | ❌ | PEAK-System |
-| Vector ASC | ✅ | ❌ | Vector tools |
-| MDF | ✅ | ❌ | Requires `asammdf` |
+| Vector ASC | ✅ | ❌ | Vector 工具 |
+| MDF | ✅ | ❌ | 需要 `asammdf` |
 
-### 14.2 CAN Interface Support
+### CAN 接口支持 / CAN Interface Support
 
-| Interface | Windows | Linux | macOS |
-|-----------|---------|-------|-------|
+| 接口 Interface | Windows | Linux | macOS |
+|----------------|---------|-------|-------|
 | SocketCAN | ❌ | ✅ | ❌ |
 | PCAN | ✅ | ✅ | ❌ |
 | Vector | ✅ | ❌ | ❌ |
 | Kvaser | ✅ | ✅ | ❌ |
 | SLCAN | ✅ | ✅ | ✅ |
-| Virtual | ✅ | ✅ | ✅ |
+| Virtual（虚拟） | ✅ | ✅ | ✅ |
 
-### 14.3 Keyboard Shortcuts
+### 快捷键 / Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+O | Open log file |
-| Ctrl+S | Save DBC |
-| Ctrl+Q | Quit |
-| F5 | Refresh frames |
-| Ctrl+F | Find ID |
-| Space | Freeze/follow |
+| 快捷键 Shortcut | 操作 Action |
+|-----------------|-------------|
+| Ctrl+O | 打开日志文件 Open log file |
+| Ctrl+S | 保存 DBC Save DBC |
+| Ctrl+Q | 退出 Quit |
+| F5 | 刷新帧 Refresh frames |
+| Ctrl+F | 查找 ID Find ID |
+| Space 空格 | 冻结/跟随 Freeze/follow |
 
 ---
 
-*End of specification*
+*规格文档结束 / End of specification*
