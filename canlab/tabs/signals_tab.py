@@ -46,7 +46,7 @@ class SignalsTab(QWidget):
         self._signals_df  = pd.DataFrame()
         self._filter_type = "ALL"
         self._build_ui()
-        self._state.frames_loaded.connect(lambda _: self._auto_analyze())
+        self._state.frames_loaded.connect(self._auto_analyze)
         self._state.dbc_updated.connect(self._update_dbc_status)
         self._state.id_selected.connect(self._select_row)
 
@@ -97,7 +97,7 @@ class SignalsTab(QWidget):
         self.table.clicked.connect(self._on_row_clicked)
         lay.addWidget(self.table)
 
-    def _auto_analyze(self):
+    def _auto_analyze(self, _count=None):
         self._run_classify()
 
     def _run_classify(self):

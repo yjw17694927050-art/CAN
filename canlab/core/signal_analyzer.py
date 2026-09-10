@@ -242,8 +242,12 @@ def _dependency_score(a: np.ndarray, b: np.ndarray) -> float:
             a_d = np.digitize(a, np.linspace(a.min(), a.max() + 1e-9, 17)) - 1
             b_d = np.digitize(b, np.linspace(b.min(), b.max() + 1e-9, 17)) - 1
             mi  = _mi_score(a_d, b_d)
-            # Normalize MI by max possible (entropy of uniform 16-bin)
-            mi_norm = min(1.0, mi / np.log2(16))
+            # sklearn's mutual_info_score is in nats (natural-log units), so the
+            # uniform-16-bin maximum is ln(16), NOT log2(16). Using log2(16) here
+            # silently shrunk every MI-normalized score by ln(16)/log2(16) ≈ 0.693
+            # (≈30% underestimate), biasing max(pearson,spearman,MI) toward the
+            # correlation terms and under-reporting nonlinear dependencies.
+            mi_norm = min(1.0, mi / np.log(16.0))
             scores.append(mi_norm)
         except Exception:
             pass

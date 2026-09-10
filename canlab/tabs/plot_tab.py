@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
@@ -318,16 +320,27 @@ class PlotTab(QWidget):
     def _live_update(self):
         if not self._live_enabled or not self._plot_items:
             return
+        # Throttle: in live capture, the underlying collector can fire
+        # frames_updated at multi-kHz. Re-decoding every trace at that rate (with
+        # a fresh full-ID .copy() per trace) starves the GUI event loop. Only
+        # recompute at most every LIVE_THROTTLE s; the next tick absorbs the gap.
+        now = time.monotonic()
+        if now - getattr(self, "_last_live_refresh", 0.0) < 0.15:
+            return
+        self._last_live_refresh = now
+
         db = self._state.dbc_db
+        all_frames = self._state.frames_df     # shared lazy view, no per-ID copy
         for key, (pi, curve, color, label) in list(self._plot_items.items()):
             meta = self._plot_meta.get(key)
             if not meta:
                 continue
             can_id = meta["can_id"]
-            df = self._state.get_frames_for_id(can_id)
+            if all_frames.empty:
+                continue
+            df = all_frames[all_frames["ID"] == can_id].tail(500)
             if df.empty:
                 continue
-            df = df.tail(500)
 
             if meta["kind"] == "byte":
                 col = meta["byte"]

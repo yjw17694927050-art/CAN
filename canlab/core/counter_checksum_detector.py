@@ -197,6 +197,15 @@ def _detect_checksums_vectorized(frames: pd.DataFrame, msg_id_int: int = 0,
     hy_const = (msg_id_int >> 4) & 0xFF
 
     out = []
+    # Tracks the best candidate per algorithm so an XOR-redundant frame does not
+    # flag every byte. XOR is its own inverse: if byte k equals the XOR of the
+    # other seven, the whole frame's XOR is 0, and then "XOR of all-but-j" equals
+    # byte j for *every* j — so a real XOR checksum would match all 8 bytes at 1.0.
+    # That turns high-entropy payload bytes into false checksum hits. We collapse
+    # each algorithm to a single representative byte (highest confidence; ties go
+    # to the largest byte index, since a CAN checksum conventionally sits at the
+    # tail of the data field).
+    by_alg: dict[str, dict] = {}
     for k in range(8):
         col = mat[:, k]
         algos = {
@@ -206,13 +215,15 @@ def _detect_checksums_vectorized(frames: pd.DataFrame, msg_id_int: int = 0,
         }
         if msg_id_int > 0:
             algos["HYUNDAI_XOR"] = ((total_xor ^ col) ^ hy_const)
-        best = None
         for name, expected in algos.items():
             conf = float(np.mean(expected == col))
-            if conf > min_conf and (best is None or conf > best["confidence"]):
-                best = {"algorithm": name, "confidence": round(conf, 3)}
-        if best:
-            out.append({"byte": k, "col": f"B{k}", **best})
+            if conf > min_conf:
+                prev = by_alg.get(name)
+                if (prev is None or conf > prev["confidence"]
+                        or (conf == prev["confidence"] and k > prev["byte"])):
+                    by_alg[name] = {"byte": k, "col": f"B{k}",
+                                    "algorithm": name, "confidence": round(conf, 3)}
+    out = sorted(by_alg.values(), key=lambda x: x["byte"])
     return out
 
 

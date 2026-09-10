@@ -93,7 +93,14 @@ class _BusReader(threading.Thread):
             try:
                 msg = self._bus.recv(timeout=0.05)
                 if msg:
-                    self._q.put((self._src, msg))
+                    # Never block on a full queue: once the main loop breaks out
+                    # (disarm / stop), nobody drains `q`, so a bare .put() would
+                    # wedge this reader forever and leak the thread. With a short
+                    # timeout we drop overflow frames instead of deadlocking.
+                    try:
+                        self._q.put((self._src, msg), timeout=0.05)
+                    except queue.Full:
+                        pass
             except Exception:
                 if not self._stop.is_set():
                     time.sleep(0.01)
