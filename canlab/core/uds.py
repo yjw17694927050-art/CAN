@@ -157,6 +157,12 @@ class UDSScanner(QThread):
             return None
         rx_id = arb_id + 0x08
         try:
+            from core.safety import require_armed, BusNotArmedError
+            require_armed()
+        except BusNotArmedError as e:
+            self.error.emit(str(e))
+            return None
+        try:
             from core.isotp import ISOTPSession
             session = ISOTPSession(self._bus, tx_id=arb_id, rx_id=rx_id)
             payload = session.send(data, timeout=timeout)
@@ -177,6 +183,12 @@ class UDSScanner(QThread):
         by one on the multi-frame path.
         """
         if not self._running:
+            return None
+        try:
+            from core.safety import require_armed, BusNotArmedError
+            require_armed()
+        except BusNotArmedError as e:
+            self.error.emit(str(e))
             return None
         try:
             import can, time

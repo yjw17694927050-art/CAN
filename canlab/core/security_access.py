@@ -20,6 +20,7 @@ Built-in algorithms (AUTO mode, tried in order)
 
 Session history is persisted to ~/.canlab/security_sessions.json.
 """
+import ast
 import json
 import os
 import time
@@ -70,6 +71,45 @@ BUILTIN_ALGORITHMS: list[tuple[str, callable]] = [
     ("formula_h",    lambda s: _to_bytes((_to_int(s) + 0x9557) ^ 0xFEED, len(s))),
     ("sub_const",    lambda s: _to_bytes(_to_int(s) - 0x1234, len(s))),
 ]
+
+
+# Whitelist of AST nodes allowed in a custom seed→key expression.
+# Anything outside this set is rejected before eval ever sees the code.
+_ALLOWED_EXPR_NODES = (
+    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Name,
+    ast.Load, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow,
+    ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd,
+    ast.Invert, ast.USub, ast.UAdd, ast.Call, ast.keyword,
+)
+_ALLOWED_NAMES = {"seed", "level", "_to_int", "_to_bytes"}
+
+
+def _compile_safe_expr(expr: str, access_level: int) -> callable:
+    """Parse *expr* with an AST whitelist, then eval only if it is pure math.
+
+    Replaces the previous bare ``eval`` (which had an empty ``__builtins__``
+    that is trivially escaped via ``().__class__.__mro__``).  Only arithmetic,
+    bitwise ops, and calls to ``_to_int``/``_to_bytes`` are permitted.
+    Raises ``ValueError`` for anything else.
+    """
+    tree = ast.parse(expr, mode="eval")
+    for node in ast.walk(tree):
+        if not isinstance(node, _ALLOWED_EXPR_NODES):
+            raise ValueError(
+                f"Expression contains disallowed construct: {type(node).__name__}"
+            )
+        if isinstance(node, ast.Name) and node.id not in _ALLOWED_NAMES:
+            raise ValueError(f"Unknown name in expression: {node.id!r}")
+        if isinstance(node, ast.Call):
+            if not (isinstance(node.func, ast.Name) and node.func.id in ("_to_int", "_to_bytes")):
+                raise ValueError("Only _to_int() and _to_bytes() calls are allowed")
+    code = compile(tree, "<custom_expr>", "eval")
+
+    def _evaluate(seed: bytes) -> bytes:
+        return eval(code, {"__builtins__": {}},
+                    {"_to_int": _to_int, "_to_bytes": _to_bytes,
+                     "seed": seed, "level": access_level})
+    return _evaluate
 
 
 def load_script_algorithm(script_path: str) -> Optional[callable]:
@@ -180,7 +220,7 @@ class SecurityAccessWorker(QThread):
         self._isotp_send(bytes([SVC_TP, 0x00]), timeout=0.3)
 
     def _request_seed(self) -> Optional[bytes]:
-        subfunc = self._access_level | 0x01 if (self._access_level & 1 == 0) else self._access_level
+        subfunc = self._access_level | 0x01 if (self._access_level & 1) == 0 else self._access_level
         self.step_done.emit(f"Requesting seed — SecurityAccess 0x27 subfunction 0x{subfunc:02X}…")
         resp = self._isotp_send(bytes([SVC_SECACC, subfunc]))
         if resp is None:
@@ -208,8 +248,7 @@ class SecurityAccessWorker(QThread):
         return None
 
     def _send_key(self, key: bytes) -> tuple[bool, int]:
-        subfunc = (self._access_level | 0x01) + 1  # even subfunc = send key
-        if self._access_level & 1 == 0:
+        if (self._access_level & 1) == 0:
             subfunc = self._access_level
         else:
             subfunc = self._access_level + 1
@@ -266,11 +305,11 @@ class SecurityAccessWorker(QThread):
         # Prepend custom expression if provided
         if self._custom_expr:
             try:
-                expr = self._custom_expr
-                fn   = eval(f"lambda seed, level: ({expr})", {"__builtins__": {}},  # noqa: S307
-                            {"_to_int": _to_int, "_to_bytes": _to_bytes})
-                algos.insert(0, ("custom_expr", lambda s, f=fn: f(s, self._access_level)))
-                self.step_done.emit(f"Custom expression: {expr}")
+                fn = _compile_safe_expr(self._custom_expr, self._access_level)
+                algos.insert(0, ("custom_expr", fn))
+                self.step_done.emit(f"Custom expression: {self._custom_expr}")
+            except ValueError as e:
+                self.step_done.emit(f"Custom expression rejected: {e}")
             except Exception as e:
                 self.step_done.emit(f"Custom expression error: {e}")
 

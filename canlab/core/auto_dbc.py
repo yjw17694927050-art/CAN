@@ -48,29 +48,32 @@ def build_from_analyzer(state=None) -> list:
             can_id.upper(), (f"MSG_{can_id}", f"Auto-detected {sig_type}")
         )
 
-        # Dominant byte (highest entropy) carries the primary signal
-        entropies = stats.get("byte_entropy", [0]*8)
+        # Dominant byte (highest entropy) carries the primary signal.
+        # analyze_id() returns per-byte stats under stats["bytes"]["B0".."B7"],
+        # each with an "entropy" and a "range" (min/max) entry.
+        byte_stats = stats.get("bytes", {})
+        entropies = [byte_stats.get(f"B{i}", {}).get("entropy", 0) for i in range(8)]
         dom_byte  = int(entropies.index(max(entropies))) if entropies else 0
 
-        # Estimate length from unique value range
-        byte_range = stats.get("byte_ranges", [])
-        if byte_range and dom_byte < len(byte_range):
-            lo, hi = byte_range[dom_byte]
-            raw_range = max(1, hi - lo)
+        # Estimate length from unique value range of the dominant byte
+        byte_info = byte_stats.get(f"B{dom_byte}", {})
+        if byte_info:
+            lo = byte_info.get("min", 0)
+            hi = byte_info.get("max", 255)
+            raw_range = max(1, int(hi) - int(lo))
         else:
             raw_range = 255
 
-        length = 8
         if raw_range <= 1:
             length = 1
         elif raw_range <= 15:
             length = 4
         elif raw_range <= 255:
             length = 8
-        elif raw_range <= 65535:
+        else:
             length = 16
 
-        freq = stats.get("frequency_hz", 0)
+        freq = stats.get("freq", 0)
         scale = 1.0
         if "WHL_SPD" in msg_name or "SPD" in msg_name:
             scale = 0.03125

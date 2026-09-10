@@ -448,7 +448,27 @@ class SettingsDialog(QDialog):
 
     def _clear_cache(self):
         import shutil
-        cache = Path(self.cache_dir_edit.text())
+        cache = Path(self.cache_dir_edit.text()).expanduser().resolve()
+        canlab_root = (Path.home() / ".canlab").resolve()
+
+        # Whitelist: only allow deleting inside ~/.canlab
+        if not str(cache).startswith(str(canlab_root)):
+            QMessageBox.warning(
+                self, "Blocked",
+                f"Refusing to delete '{cache}'.\n\n"
+                f"Cache directory must be inside {canlab_root}."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirm Clear Cache",
+            f"Delete all contents of:\n{cache}\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         if cache.exists():
             shutil.rmtree(cache)
             cache.mkdir(parents=True, exist_ok=True)

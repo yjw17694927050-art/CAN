@@ -55,6 +55,9 @@ class AppState(QObject):
         self._frames_base:   pd.DataFrame = pd.DataFrame()
         self._frame_chunks:  list         = []
         self._frames_cache:  pd.DataFrame = None
+        # Cap on total frames kept in memory. Prevents OOM on long captures.
+        # When exceeded, the oldest chunks are dropped.
+        self.max_frames:     int          = 500_000
         self.selected_id:      str          = ""
         self.sources:          list         = []
         self.can_bus           = None
@@ -156,6 +159,12 @@ class AppState(QObject):
         # DataFrame is rebuilt lazily on the next read (throttled by the UI).
         self._frame_chunks.append(new_df)
         self._frames_cache = None
+        # Enforce memory cap: drop oldest chunks when total exceeds max_frames.
+        total = (len(self._frames_base) +
+                 sum(len(c) for c in self._frame_chunks))
+        while total > self.max_frames and self._frame_chunks:
+            dropped = self._frame_chunks.pop(0)
+            total -= len(dropped)
         self.frames_updated.emit()
 
     def set_repo_context(self, info: dict, readme: str, url: str):

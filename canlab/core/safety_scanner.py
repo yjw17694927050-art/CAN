@@ -51,6 +51,7 @@ class SafetyScanWorker(QThread):
 
     def run(self):
         from core.injection import pack_signal, hyundai_checksum
+        from core.safety import require_armed, BusNotArmedError
         import can
 
         step_size = (self._max - self._min) / (self._steps - 1)
@@ -75,6 +76,11 @@ class SafetyScanWorker(QThread):
             if self._apply_checksum:
                 data[7] = hyundai_checksum(bytes(data), mid)
 
+            try:
+                require_armed()
+            except BusNotArmedError as e:
+                self.error.emit(str(e))
+                return
             try:
                 msg = can.Message(
                     arbitration_id=mid,

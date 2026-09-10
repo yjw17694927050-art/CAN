@@ -1156,7 +1156,35 @@ class MainWindow(QMainWindow):
         opendbc = getattr(self, "_opendbc_worker", None)
         if opendbc is not None:
             opendbc.wait(2000)
+        # Stop tab-level workers (Gateway, Injection, AI Engine, etc.)
+        self._stop_tab_workers()
         event.accept()
+
+    def _stop_tab_workers(self):
+        """Iterate all tabs and stop any background QThreads they own."""
+        tab_widget = self.findChild(QTabWidget)
+        if tab_widget is None:
+            return
+        worker_attrs = (
+            "_worker", "_inj_worker", "_replay_worker",
+            "_scan_worker", "_fuzz_worker", "_seq_worker", "_nl_worker",
+        )
+        for i in range(tab_widget.count()):
+            tab = tab_widget.widget(i)
+            for attr in worker_attrs:
+                worker = getattr(tab, attr, None)
+                if worker is None:
+                    continue
+                try:
+                    if hasattr(worker, "stop"):
+                        worker.stop()
+                    elif hasattr(worker, "quit"):
+                        worker.quit()
+                    if worker.isRunning():
+                        worker.wait(2000)
+                except Exception:
+                    pass
+                setattr(tab, attr, None)
 
 
 def _sep() -> QLabel:

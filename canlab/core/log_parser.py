@@ -366,14 +366,17 @@ def parse_log_file(filepath: str) -> pd.DataFrame:
         raise ValueError(f"Failed to parse {filepath}: {e}") from e
 
 
-def _candump_has_fd(filepath: str, sniff_lines: int = 2000) -> bool:
-    """True if any of the first sniff_lines candump lines is a CAN FD frame."""
+def _candump_has_fd(filepath: str) -> bool:
+    """True if any candump line is a CAN FD frame (## separator).
+
+    Scans the entire file; the previous sniff-only approach missed FD frames
+    that appeared after the first 2000 lines, causing them to be silently
+    parsed as empty classic frames.
+    """
     fd_re = re.compile(r"\)\s+\S+\s+[0-9A-Fa-f]+##")
     try:
         with open(filepath) as f:
-            for i, line in enumerate(f):
-                if i >= sniff_lines:
-                    break
+            for line in f:
                 if fd_re.search(line):
                     return True
     except Exception:

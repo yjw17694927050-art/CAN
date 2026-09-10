@@ -112,10 +112,10 @@ class ReplayWorker(QThread):
                     # the bus as 8 bytes with five spurious zeros — a different
                     # frame than was captured.
                     dlc_val = row.get("DLC")
-                    n = int(dlc_val) if pd.notna(dlc_val) else 8
-                    n = max(0, min(n, 8))
+                    dlc_n = int(dlc_val) if pd.notna(dlc_val) else 8
+                    dlc_n = max(0, min(dlc_n, 8))
                     payload = []
-                    for i in range(n):
+                    for i in range(dlc_n):
                         v = row.get(f"B{i}")
                         payload.append(int(v) & 0xFF if pd.notna(v) else 0)
                     extended = (
@@ -133,7 +133,7 @@ class ReplayWorker(QThread):
                     self.error.emit(str(e))
 
                 if idx % 50 == 0:
-                    self.tick.emit(idx, n)
+                    self.tick.emit(idx, len(rows))
 
             if _seeked:
                 continue   # restart while loop with new start_idx / t0
@@ -141,7 +141,7 @@ class ReplayWorker(QThread):
             if not self._running:
                 break
 
-            self.tick.emit(n, n)
+            self.tick.emit(len(rows), len(rows))
 
             if self._loop:
                 loop_count += 1
