@@ -1,4 +1,12 @@
-# CanLab -- CAN Bus Reverse-Engineering Workstation
+# CAN-Space — CAN Bus Reverse-Engineering Workbench
+
+> **本项目为派生项目 / This is a derivative project**
+>
+> **CAN-Space** 是基于开源项目 **CanLab**（由 Sherin Joseph Roy 开发，
+> https://github.com/Sherin-SEF-AI/CanLab，MIT 许可证）二次开发的个人化版本。
+> 本 README 保留了上游的完整功能说明、安全警告与致谢，作为功能溯源与合规依据。
+> 二次开发在保留上游全部功能与安全机制的前提下，聚焦中文支持、界面简化、国产大模型
+> 接入与个人化工作流。详见 [PRD.md](PRD.md) 与 [ROADMAP.md](ROADMAP.md)。
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=flat-square&logo=python)](https://www.python.org)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green?style=flat-square)](https://pypi.org/project/PyQt6/)
@@ -40,8 +48,8 @@ for isolated bench use only — injection, replay, fuzzing, and a MitM gateway.
 This is the supported, verified way to run it.
 
 ```bash
-git clone https://github.com/Sherin-SEF-AI/CanLab.git
-cd CanLab
+git clone https://github.com/yjw17694927050-art/CAN.git
+cd CAN
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -286,5 +294,6 @@ OEM scale/offset snapping) are adapted from CSS Electronics'
 
 MIT License. See [LICENSE](LICENSE).
 
-**Author:** Sherin Joseph Roy
-**Repository:** https://github.com/Sherin-SEF-AI/CanLab
+**作者（本派生 Author of this fork）:** 本仓库维护者
+**仓库（Repository）:** https://github.com/yjw17694927050-art/CAN
+**上游（Upstream）:** CanLab — https://github.com/Sherin-SEF-AI/CanLab （作者 Sherin Joseph Roy，MIT）

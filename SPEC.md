@@ -1,8 +1,12 @@
-# CanLab — 技术规格说明书 / Technical Specification
+# CAN-Space — 技术规格说明书 / Technical Specification
 
 > **版本 Version**：1.0（Alpha）
 > **日期 Date**：2026-09-10
 > **状态 Status**：活跃开发中 / Active development
+>
+> **开发溯源 Provenance**：本产品 **CAN-Space** 基于开源 **CanLab**
+> （`https://github.com/Sherin-SEF-AI/CanLab`，Sherin Joseph Roy，MIT）二次开发。
+> 详见 [PRD.md](PRD.md) §0。
 >
 > **语言 Language**：中英对照。中文为主，技术术语保留英文，方便中文开发者理解。
 
@@ -10,7 +14,7 @@
 
 ## 1. 总览 / Overview
 
-CanLab 是一个用于 CAN 总线数据逆向工程的桌面应用程序。它提供了采集（capture）、分析（analysis）、解码（decode）、以及在隔离台架（isolated bench setup）上注入（inject）CAN 帧的工具。应用程序基于 Python 3.11+ 与 PyQt6 构建。
+CAN-Space 是一个用于 CAN 总线数据逆向工程的桌面应用程序（基于 CanLab 二次开发）。它提供了采集（capture）、分析（analysis）、解码（decode）、以及在隔离台架（isolated bench setup）上注入（inject）CAN 帧的工具。应用程序基于 Python 3.11+ 与 PyQt6 构建。
 
 ### 1.1 目标 / Goals
 
